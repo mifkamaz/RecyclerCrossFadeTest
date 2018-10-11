@@ -4,157 +4,140 @@ import android.os.Bundle
 import android.support.v7.app.AppCompatActivity
 import android.support.v7.widget.LinearLayoutManager
 import android.support.v7.widget.RecyclerView
-import android.transition.TransitionManager
-import android.util.Log
-import android.view.LayoutInflater
-import android.view.MotionEvent
 import android.view.View
-import android.view.ViewGroup
-import android.widget.TextView
-import kotlinx.android.synthetic.main.activity_main.*
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+import ru.mifkamaz.recyclercrossfadetest.adapters.Item
+import ru.mifkamaz.recyclercrossfadetest.adapters.LargeAdapter
+import ru.mifkamaz.recyclercrossfadetest.adapters.MonthAdapter
+import ru.mifkamaz.recyclercrossfadetest.adapters.SmallAdapter
 import java.util.*
-import java.util.concurrent.TimeUnit
-import kotlin.concurrent.schedule
 
 class MainActivity : AppCompatActivity() {
 
-    private val centerHelperLarge = CenterHelper(CenterHelper.ScrollState.SCROLL)
-    private val centerHelperSmall = CenterHelper(CenterHelper.ScrollState.SCROLL)
-    private val snapHelperLarge = CustomLinearSnapHelper()
-    private val snapHelperSmall = CustomLinearSnapHelper()
+    private var isMonthRecyclerMoving = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        recycler_view_large.addItemDecoration(CenterItemDecoration())
-        recycler_view_small.addItemDecoration(CenterItemDecoration())
+        val firstRecycler = findViewById<RecyclerView>(R.id.recycler_view_large)
+        val secondRecycler = findViewById<RecyclerView>(R.id.recycler_view_small)
+        val monthRecycler = findViewById<RecyclerView>(R.id.recycler_view_month)
 
-        recycler_view_small.layoutManager = LinearLayoutManager(this, RecyclerView.HORIZONTAL, false)
-        recycler_view_small.adapter = Adapter(R.layout.item_small)
+        val items = getData().map {
+            Item(
+                it.price,
+                it.percent.toInt(),
+                it.d(),
+                it.isEmpty(),
+                it.d().isToday()
+            )
+        }
+        val months = getMonths()
 
-        recycler_view_large.layoutManager = LinearLayoutManager(this, RecyclerView.HORIZONTAL, false)
-        recycler_view_large.adapter = Adapter(R.layout.item_large)
+        secondRecycler.layoutManager = LinearLayoutManager(this, RecyclerView.HORIZONTAL, false)
+        secondRecycler.adapter = SmallAdapter(items)
 
-        view_foreground.setOnTouchListener(object : View.OnTouchListener {
 
-            private var timer: Timer? = Timer()
+        firstRecycler.layoutManager = LinearLayoutManager(this, RecyclerView.HORIZONTAL, false)
 
-            private var isLarge = false
-
-            override fun onTouch(v: View?, motionEvent: MotionEvent?): Boolean {
-                motionEvent ?: return false
-
-                Log.d("TOUCH_EVENT", motionEvent.toString())
-
-                if (motionEvent.action == MotionEvent.ACTION_DOWN) {
-                    timer?.cancel()
-                    timer = Timer()
-                    timer?.schedule(TimeUnit.SECONDS.toMillis(1)) {
-                        runOnUiThread {
-//                            initForLarge()
-                            TransitionManager.beginDelayedTransition(root)
-                            recycler_view_large.bringToFront()
-                            isLarge = true
-                        }
-                    }
-                } else {
-                    timer?.cancel()
-                }
-
-                if (motionEvent.action == MotionEvent.ACTION_UP) {
-//                    if (isLarge) {
-//                        initForSmall()
-                        TransitionManager.beginDelayedTransition(root)
-                        recycler_view_small.bringToFront()
-//                        isLarge = false
-//                    }
-                }
-
-                view_foreground.bringToFront()
-
-                return recycler_view_small.dispatchTouchEvent(motionEvent)
+        firstRecycler.adapter = LargeAdapter(items) { newSelectedPosition ->
+            if (items[newSelectedPosition].empty) {
+                return@LargeAdapter
             }
-        })
 
-        CenterHelper.moveViewToCenter(recycler_view_small, 10)
-        CenterHelper.moveViewToCenter(recycler_view_large, 10)
+            val oldSelected = items.find { it.selected } ?: return@LargeAdapter
+            val newSelected = items[newSelectedPosition]
 
-        initForSmall()
-    }
+            oldSelected.selected = false
+            newSelected.selected = true
 
-    private fun initForSmall() {
-//        centerHelperLarge.dettachFromRecyclerView(recycler_view_large)
-//        centerHelperSmall.dettachFromRecyclerView(recycler_view_small)
-//        recycler_view_small.onFlingListener = null
-//        recycler_view_large.onFlingListener = null
+            firstRecycler.adapter?.notifyItemChanged(items.indexOf(oldSelected))
+            firstRecycler.adapter?.notifyItemChanged(items.indexOf(newSelected))
 
-        snapHelperSmall.attachToRecyclerView(recycler_view_small)
-//        snapHelperLarge.attachToRecyclerView(recycler_view_large)
+            secondRecycler.adapter?.notifyItemChanged(items.indexOf(oldSelected))
+            secondRecycler.adapter?.notifyItemChanged(items.indexOf(newSelected))
 
-        centerHelperSmall.attachToRecyclerView(recycler_view_small) {
-            CenterHelper.moveViewToCenter(recycler_view_large, it)
+            CenterHelper.moveViewToCenter(secondRecycler, newSelectedPosition, false)
         }
 
-        centerHelperLarge.attachToRecyclerView(recycler_view_large)
+        RecyclerViewCrossFadeController(
+            findViewById(R.id.view_foreground),
+            firstRecycler,
+            secondRecycler,
+            items.indexOf(items.find { it.selected })
+        )
+
+        monthRecycler.layoutManager = LinearLayoutManager(this, RecyclerView.HORIZONTAL, false)
+        monthRecycler.adapter = MonthAdapter(months)
+        CustomLinearSnapHelper().attachToRecyclerView(monthRecycler)
+
+        CenterHelper(CenterHelper.ScrollState.SCROLL, false)
+            .attachToRecyclerView(secondRecycler) {
+                if (isMonthRecyclerMoving) {
+                    return@attachToRecyclerView
+                }
+
+                val currentPosition =
+                    CenterHelper.findCenterViewPosition(monthRecycler, false)
+                        ?: return@attachToRecyclerView
+
+                val newPosition = months.indexOf(items[it].calendar.get(Calendar.MONTH))
+
+                monthRecycler.smoothScrollBy((newPosition - currentPosition) * monthRecycler.width, 0)
+            }
+
+        monthRecycler.addOnScrollListener(
+            object : RecyclerView.OnScrollListener() {
+
+                override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+                    super.onScrollStateChanged(recyclerView, newState)
+                    isMonthRecyclerMoving = newState != RecyclerView.SCROLL_STATE_IDLE
+                }
+
+            }
+        )
     }
 
-    private fun initForLarge() {
-        centerHelperLarge.dettachFromRecyclerView(recycler_view_large)
-        centerHelperSmall.dettachFromRecyclerView(recycler_view_small)
-        recycler_view_small.onFlingListener = null
-        recycler_view_large.onFlingListener = null
+    private fun getData(): List<DayStatics> =
+        Gson()
+            .fromJson(
+                JsonExample.JSON_EXAMPLE,
+                TypeToken.getParameterized(
+                    ArrayList::class.java,
+                    DayStatics::class.java
+                ).type
+            ) as List<DayStatics>
 
-        snapHelperLarge.attachToRecyclerView(recycler_view_large)
-
-        centerHelperLarge.attachToRecyclerView(recycler_view_large) {
-            CenterHelper.moveViewToCenter(recycler_view_small, it)
+    private fun getMonths(): List<Int> = getData()
+        .groupBy {
+            it.d().get(Calendar.MONTH)
         }
+        .keys
+        .toList()
 
-        centerHelperSmall.attachToRecyclerView(recycler_view_small)
+}
 
+fun Calendar.isToday(): Boolean {
+    val today = Calendar.getInstance()
+    return get(Calendar.YEAR) == today.get(Calendar.YEAR) && get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR)
+}
+
+fun View.visibleOrGone(visible: Boolean) {
+    visibility = if (visible) {
+        View.VISIBLE
+    } else {
+        View.GONE
     }
-
 }
 
-class Adapter(private val itemType: Int) : RecyclerView.Adapter<ViewHolder>() {
-
-    override fun getItemViewType(position: Int) = itemType
-
-    override fun onCreateViewHolder(p0: ViewGroup, p1: Int) =
-        ViewHolder(LayoutInflater.from(p0.context).inflate(p1, p0, false))
-
-    override fun getItemCount() = 20
-
-    override fun onBindViewHolder(p0: ViewHolder, p1: Int) {
-        p0.textView.text = p1.toString()
+fun View.visibleOrInvisible(visible: Boolean) {
+    visibility = if (visible) {
+        View.VISIBLE
+    } else {
+        View.INVISIBLE
     }
-
-    override fun getItemId(position: Int) = position.toLong()
-
-}
-
-class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-
-    val textView: TextView = itemView as TextView
-
 }
 
 
-//Timer()
-//.apply {
-//    schedule(TimeUnit.SECONDS.toMillis(5)) {
-//        runOnUiThread {
-//            adapter.itemType = R.layout.item_large
-//            adapter.notifyItemChanged(0, 20)
-//        }
-//    }
-//}
-//.apply {
-//    schedule(TimeUnit.SECONDS.toMillis(10)) {
-//        runOnUiThread {
-//            adapter.itemType = R.layout.item_small
-//            adapter.notifyItemChanged(0, 20)
-//        }
-//    }
-//}

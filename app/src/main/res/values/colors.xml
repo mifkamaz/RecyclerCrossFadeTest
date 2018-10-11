@@ -3,4 +3,9 @@
     <color name="colorPrimary">#3F51B5</color>
     <color name="colorPrimaryDark">#303F9F</color>
     <color name="colorAccent">#FF4081</color>
+
+    <color name="calendar_selected">#F8E71C</color>
+    <color name="calendar_default">#E6E2DA</color>
+    <color name="date_color_friday">#721E1E</color>
+    <color name="date_color">#4D4D4D</color>
 </resources>

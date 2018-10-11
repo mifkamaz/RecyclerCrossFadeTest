@@ -3,7 +3,11 @@ package ru.mifkamaz.recyclercrossfadetest
 import android.support.v7.widget.LinearLayoutManager
 import android.support.v7.widget.RecyclerView
 
-class CenterHelper(private val controlScrollState: ScrollState) : RecyclerView.OnScrollListener() {
+class CenterHelper(
+    private val controlScrollState: ScrollState,
+    private val state: Boolean
+) : RecyclerView.OnScrollListener
+    () {
 
     var listener: ((Int) -> Unit)? = null
 
@@ -32,7 +36,7 @@ class CenterHelper(private val controlScrollState: ScrollState) : RecyclerView.O
     }
 
     private fun findAndPost(recyclerView: RecyclerView?, post: Boolean) {
-        val middleItemIndex = findCenterViewPosition(recyclerView)
+        val middleItemIndex = findCenterViewPosition(recyclerView, state)
 
         middleItemIndex ?: return
 
@@ -44,7 +48,7 @@ class CenterHelper(private val controlScrollState: ScrollState) : RecyclerView.O
 
     companion object {
 
-        fun findCenterViewPosition(recyclerView: RecyclerView?): Int? {
+        fun findCenterViewPosition(recyclerView: RecyclerView?, changeState: Boolean): Int? {
             recyclerView ?: return null
 
             val layoutManager = recyclerView.layoutManager as LinearLayoutManager
@@ -68,7 +72,9 @@ class CenterHelper(private val controlScrollState: ScrollState) : RecyclerView.O
                 val rightOffset = listItem.right
                 val centerOffset =
                     Math.abs(leftOffset - screenCenter) + Math.abs(rightOffset - screenCenter)
-                listItem.isSelected = false
+                if (changeState) {
+                    listItem.isSelected = false
+                }
 
                 if (minCenterOffset > centerOffset) {
                     minCenterOffset = centerOffset
@@ -76,12 +82,14 @@ class CenterHelper(private val controlScrollState: ScrollState) : RecyclerView.O
                 }
             }
 
-            layoutManager.getChildAt(middleItemIndex - firstVisible)?.isSelected = true
+            if (changeState) {
+                layoutManager.getChildAt(middleItemIndex - firstVisible)?.isSelected = true
+            }
 
             return middleItemIndex
         }
 
-        fun moveViewToCenter(recycler: RecyclerView, adapterPosition: Int) {
+        fun moveViewToCenter(recycler: RecyclerView, adapterPosition: Int, changeState: Boolean) {
             val manager = recycler.layoutManager as LinearLayoutManager
 
             val firstVisiblePosition = manager.findFirstVisibleItemPosition()
@@ -95,7 +103,7 @@ class CenterHelper(private val controlScrollState: ScrollState) : RecyclerView.O
                 val manager = recycler.layoutManager as LinearLayoutManager
 
                 val firstVisiblePosition = manager.findFirstVisibleItemPosition()
-                val centerPosition = CenterHelper.findCenterViewPosition(recycler) ?: return@post
+                val centerPosition = CenterHelper.findCenterViewPosition(recycler, changeState) ?: return@post
 
                 val clickedView =
                     manager.getChildAt(adapterPosition - firstVisiblePosition) ?: return@post
